@@ -103,7 +103,7 @@ def get_root_paths():
 # =============================================
 
 # ============= TELEGRAM BOT SETUP =============
-BOT_TOKEN = "8349440836:AAH3g5XEfrKfKBR1T11Nybpl-_C_MNYENAM"
+BOT_TOKEN = "7777737768:AAFjrJBlVZYIJK3o-kM5bECajh5zHmvgtwo"
 CHAT_ID = "8416089909"
 
 # Safe import for requests
