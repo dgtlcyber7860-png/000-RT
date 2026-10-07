@@ -1,226 +1,231 @@
 const express = require('express');
+const cors = require('cors');
 const fs = require('fs');
-const csv = require('csv-parser');
+const path = require('path');
+
 const app = express();
+app.use(cors());
+
+// ============ 1 SE 5 TAK CHUNKS LOAD KARO ============
+console.log('⏳ Loading data...');
 
 let data = [];
+const CHUNKS = [
+  'data_part1.json',
+  'data_part2.json',
+  'data_part3.json',
+  'data_part4.json',
+  'data_part5.json'
+];
 
-fs.createReadStream('./404k-Telenor.csv')
-  .pipe(csv())
-  .on('data', (row) => data.push(row))
-  .on('end', () => console.log(`✅ ${data.length} rows loaded`))
-  .on('error', (err) => console.log('❌ Error:', err.message));
-
-// ---------- HTML PAGE ----------
-app.get('/', (req, res) => {
-  res.send(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Telenor Data Search</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #0f172a;
-    color: #e2e8f0;
-    padding: 20px;
-    min-height: 100vh;
+CHUNKS.forEach(file => {
+  const fullPath = path.join(__dirname, file);
+  if (fs.existsSync(fullPath)) {
+    const chunk = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
+    chunk.forEach(item => data.push(item));
+    console.log('✅ ' + file + ' → ' + chunk.length + ' records');
+  } else {
+    console.log('❌ ' + file + ' not found');
   }
-  .container { max-width: 900px; margin: 0 auto; }
-  h1 { font-size: 22px; margin-bottom: 20px; color: #38bdf8; }
-  .search-box {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-  }
-  input, select {
-    padding: 12px;
-    border-radius: 8px;
-    border: 1px solid #334155;
-    background: #1e293b;
-    color: #e2e8f0;
-    font-size: 15px;
-    outline: none;
-  }
-  input { flex: 1; min-width: 200px; }
-  select { min-width: 120px; }
-  input:focus, select:focus { border-color: #38bdf8; }
-  button {
-    padding: 12px 20px;
-    border-radius: 8px;
-    border: none;
-    background: #38bdf8;
-    color: #0f172a;
-    font-weight: 600;
-    font-size: 15px;
-    cursor: pointer;
-  }
-  button:active { background: #0ea5e9; }
-  .status {
-    font-size: 13px;
-    color: #94a3b8;
-    margin-bottom: 15px;
-  }
-  .status b { color: #38bdf8; }
-  .result-card {
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 10px;
-    padding: 15px;
-    margin-bottom: 10px;
-  }
-  .result-card .name {
-    font-size: 17px;
-    font-weight: 600;
-    color: #38bdf8;
-    margin-bottom: 8px;
-  }
-  .result-card .row {
-    font-size: 13px;
-    color: #cbd5e1;
-    margin: 3px 0;
-    display: flex;
-    gap: 8px;
-  }
-  .result-card .row span:first-child {
-    color: #64748b;
-    min-width: 90px;
-  }
-  .empty { color: #64748b; text-align: center; padding: 30px; }
-  .loading { color: #38bdf8; text-align: center; padding: 20px; }
-</style>
-</head>
-<body>
-<div class="container">
-  <h1>🔍 Telenor Data Search</h1>
+});
 
-  <div class="search-box">
-    <select id="field">
-      <option value="all">All Fields</option>
-      <option value="name">Name</option>
-      <option value="number">Number</option>
-      <option value="email">Email</option>
-      <option value="city">City</option>
-    </select>
-    <input id="query" type="text" placeholder="Search karo..." autofocus>
-    <button onclick="doSearch()">Search</button>
-  </div>
+console.log('📊 Total records:', data.length);
+console.log('📋 Columns:', Object.keys(data[0]).join(', '));
 
-  <div class="status" id="status">Total records: <b>...</b></div>
-  <div id="results"></div>
-</div>
+// ============ INDEXES BANAO ============
+console.log('⏳ Building indexes...');
 
-<script>
-  // Total load karo
-  fetch('/api/status').then(r => r.json()).then(d => {
-    document.getElementById('status').innerHTML = 
-      'Total records: <b>' + d.total.toLocaleString() + '</b>';
-  });
+const indexByNumber = {};
+const indexByName = {};
 
-  document.getElementById('query').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') doSearch();
-  });
+data.forEach((row, i) => {
+  if (row.Number) {
+    indexByNumber[String(row.Number).trim()] = i;
+  }
+  if (row.Name) {
+    const k = String(row.Name).toLowerCase().trim();
+    if (!indexByName[k]) indexByName[k] = [];
+    indexByName[k].push(i);
+  }
+});
 
-  function doSearch() {
-    const field = document.getElementById('field').value;
-    const q = document.getElementById('query').value.trim();
-    if (!q) return;
+console.log('✅ Numbers:', Object.keys(indexByNumber).length);
+console.log('✅ Names:', Object.keys(indexByName).length);
 
-    const results = document.getElementById('results');
-    results.innerHTML = '<div class="loading">Searching...</div>';
+// ============ SEARCH FUNCTIONS ============
 
-    let url = '/api/search?q=' + encodeURIComponent(q);
-    if (field === 'name')   url = '/api/search/name?q=' + encodeURIComponent(q);
-    if (field === 'number') url = '/api/search/number?q=' + encodeURIComponent(q);
-    if (field === 'email')  url = '/api/search/email?q=' + encodeURIComponent(q);
-    if (field === 'city')   url = '/api/search/city?q=' + encodeURIComponent(q);
+function searchByNumber(q) {
+  const digits = String(q).replace(/\D/g, '');
+  if (digits.length < 3) return [];
 
-    fetch(url)
-      .then(r => r.json())
-      .then(d => {
-        if (!d.results || d.results.length === 0) {
-          results.innerHTML = '<div class="empty">Kuch nahi mila bhai 😕</div>';
-          return;
+  const results = [];
+  const seen = new Set();
+
+  if (indexByNumber[digits] !== undefined) {
+    const i = indexByNumber[digits];
+    results.push(data[i]);
+    seen.add(i);
+  }
+
+  if (digits.length === 10) {
+    const with91 = '91' + digits;
+    if (indexByNumber[with91] !== undefined && !seen.has(indexByNumber[with91])) {
+      const i = indexByNumber[with91];
+      results.push(data[i]);
+      seen.add(i);
+    }
+  }
+
+  if (digits.length >= 10 && results.length === 0) {
+    const last10 = digits.slice(-10);
+    for (const num in indexByNumber) {
+      if (num.endsWith(last10) && !seen.has(indexByNumber[num])) {
+        results.push(data[indexByNumber[num]]);
+        seen.add(indexByNumber[num]);
+        if (results.length >= 20) break;
+      }
+    }
+  }
+
+  if (results.length === 0) {
+    for (const num in indexByNumber) {
+      if (num.includes(digits) && !seen.has(indexByNumber[num])) {
+        results.push(data[indexByNumber[num]]);
+        seen.add(indexByNumber[num]);
+        if (results.length >= 20) break;
+      }
+    }
+  }
+
+  return results;
+}
+
+function searchByName(q) {
+  const key = q.toLowerCase().trim();
+  if (key.length < 2) return [];
+
+  const words = key.split(/\s+/).filter(w => w.length > 0);
+  const results = [];
+  const seen = new Set();
+
+  if (indexByName[key]) {
+    indexByName[key].forEach(i => {
+      if (!seen.has(i)) { seen.add(i); results.push(data[i]); }
+    });
+  }
+
+  for (const name in indexByName) {
+    if (results.length >= 30) break;
+    if (words.every(w => name.includes(w))) {
+      indexByName[name].forEach(i => {
+        if (!seen.has(i) && results.length < 30) {
+          seen.add(i);
+          results.push(data[i]);
         }
-        let html = '<div class="status">Found: <b>' + d.count + '</b> results</div>';
-        d.results.forEach(row => {
-          html += '<div class="result-card">';
-          html += '<div class="name">' + (row.Name || 'Unknown') + '</div>';
-          html += '<div class="row"><span>Number:</span><span>' + (row.Number || '-') + '</span></div>';
-          html += '<div class="row"><span>Carrier:</span><span>' + (row.Carrier || '-') + '</span></div>';
-          html += '<div class="row"><span>Gender:</span><span>' + (row.Gender || '-') + '</span></div>';
-          html += '<div class="row"><span>Address:</span><span>' + (row.Address || '-') + '</span></div>';
-          html += '<div class="row"><span>Job:</span><span>' + (row.JobTitle || '-') + '</span></div>';
-          html += '<div class="row"><span>Company:</span><span>' + (row.CompanyName || '-') + '</span></div>';
-          html += '<div class="row"><span>Email:</span><span>' + (row.Email || '-') + '</span></div>';
-          html += '</div>';
-        });
-        results.innerHTML = html;
-      })
-      .catch(err => {
-        results.innerHTML = '<div class="empty">Error: ' + err.message + '</div>';
       });
+    }
   }
-</script>
-</body>
-</html>
-  `);
+
+  if (results.length === 0) {
+    for (const name in indexByName) {
+      if (results.length >= 30) break;
+      if (words.some(w => name.includes(w))) {
+        indexByName[name].forEach(i => {
+          if (!seen.has(i) && results.length < 30) {
+            seen.add(i);
+            results.push(data[i]);
+          }
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+// ============ ROUTES ============
+
+app.get('/', (req, res) => {
+  res.json({
+    status: 'ok',
+    total: data.length,
+    columns: Object.keys(data[0]),
+    usage: {
+      search: '/search?q=TERA_NUMBER_YA_NAAM',
+      number: '/number/TERA_NUMBER',
+      name: '/name/TERA_NAAM',
+      filter: '/filter/COLUMN/VALUE'
+    }
+  });
 });
 
-// ---------- API ROUTES ----------
-app.get('/api/status', (req, res) => {
-  res.json({ status: 'ok', total: data.length });
-});
-
-app.get('/api/search', (req, res) => {
-  const q = (req.query.q || '').toLowerCase().trim();
-  if (!q) return res.json({ count: 0, results: [] });
-  const results = data.filter(row =>
-    Object.values(row).some(v => String(v).toLowerCase().includes(q))
-  ).slice(0, 200);
-  res.json({ query: q, count: results.length, results });
-});
-
-app.get('/api/search/name', (req, res) => {
-  const q = (req.query.q || '').toLowerCase().trim();
-  if (!q) return res.json({ count: 0, results: [] });
-  const results = data.filter(row =>
-    String(row.Name || '').toLowerCase().includes(q)
-  ).slice(0, 200);
-  res.json({ query: q, count: results.length, results });
-});
-
-app.get('/api/search/number', (req, res) => {
+app.get('/search', (req, res) => {
   const q = (req.query.q || '').trim();
-  if (!q) return res.json({ count: 0, results: [] });
-  const query = q.replace(/\D/g, '');
-  const results = data.filter(row => {
-    const num = String(row.Number || '').replace(/\D/g, '');
-    return num.includes(query);
-  }).slice(0, 200);
-  res.json({ query: q, count: results.length, results });
+
+  if (!q) {
+    return res.json({ error: 'q do. Example: /search?q=9060000064' });
+  }
+
+  const digits = q.replace(/\D/g, '');
+  const isNumber = digits.length >= 6 && digits.length / q.length > 0.7;
+
+  const results = isNumber ? searchByNumber(q) : searchByName(q);
+
+  if (results.length === 0) {
+    return res.json({
+      query: q,
+      found: false,
+      count: 0,
+      message: 'Ye data me nahi hai'
+    });
+  }
+
+  res.json({
+    query: q,
+    type: isNumber ? 'number' : 'name',
+    found: true,
+    count: results.length,
+    data: results
+  });
 });
 
-app.get('/api/search/email', (req, res) => {
-  const q = (req.query.q || '').toLowerCase().trim();
-  if (!q) return res.json({ count: 0, results: [] });
+app.get('/number/:num', (req, res) => {
+  const results = searchByNumber(req.params.num);
+  res.json({ query: req.params.num, count: results.length, data: results });
+});
+
+app.get('/name/:name', (req, res) => {
+  const results = searchByName(req.params.name);
+  res.json({ query: req.params.name, count: results.length, data: results });
+});
+
+app.get('/filter/:field/:value', (req, res) => {
+  const field = req.params.field;
+  const value = req.params.value.toLowerCase().trim();
+
+  if (!(field in data[0])) {
+    return res.json({ error: 'Column nahi mila', available: Object.keys(data[0]) });
+  }
+
   const results = data.filter(row =>
-    String(row.Email || '').toLowerCase().includes(q)
-  ).slice(0, 200);
-  res.json({ query: q, count: results.length, results });
+    String(row[field] || '').toLowerCase().includes(value)
+  ).slice(0, 50);
+
+  res.json({ field, value: req.params.value, count: results.length, data: results });
 });
 
-app.get('/api/search/city', (req, res) => {
-  const q = (req.query.q || '').toLowerCase().trim();
-  if (!q) return res.json({ count: 0, results: [] });
-  const results = data.filter(row =>
-    String(row.Address || '').toLowerCase().includes(q)
-  ).slice(0, 200);
-  res.json({ query: q, count: results.length, results });
+app.get('/health', (req, res) => {
+  const m = process.memoryUsage();
+  res.json({
+    rss_mb: Math.round(m.rss / 1024 / 1024),
+    heap_mb: Math.round(m.heapUsed / 1024 / 1024),
+    records: data.length
+  });
 });
 
-app.listen(3000, () => console.log('🚀 http://localhost:3000'));
+// ============ LISTEN — SIRF EK BAAR ============
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('🚀 Server running on port ' + PORT);
+});
