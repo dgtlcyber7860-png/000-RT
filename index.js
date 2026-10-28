@@ -30,7 +30,8 @@ CHUNKS.forEach(file => {
 });
 
 console.log('📊 Total records:', data.length);
-console.log('📋 Columns:', Object.keys(data[0]).join(', '));
+// Agar data khali hai toh crash na ho, isliye check laga diya
+console.log('📋 Columns:', data.length > 0 ? Object.keys(data[0]).join(', ') : 'No data');
 
 // ============ INDEXES BANAO ============
 console.log('⏳ Building indexes...');
@@ -149,7 +150,7 @@ app.get('/', (req, res) => {
   res.json({
     status: 'ok',
     total: data.length,
-    columns: Object.keys(data[0]),
+    columns: data.length > 0 ? Object.keys(data[0]) : [],
     usage: {
       search: '/search?q=TERA_NUMBER_YA_NAAM',
       number: '/number/TERA_NUMBER',
@@ -203,8 +204,8 @@ app.get('/filter/:field/:value', (req, res) => {
   const field = req.params.field;
   const value = req.params.value.toLowerCase().trim();
 
-  if (!(field in data[0])) {
-    return res.json({ error: 'Column nahi mila', available: Object.keys(data[0]) });
+  if (data.length === 0 || !(field in data[0])) {
+    return res.json({ error: 'Column nahi mila', available: data.length > 0 ? Object.keys(data[0]) : [] });
   }
 
   const results = data.filter(row =>
@@ -226,6 +227,13 @@ app.get('/health', (req, res) => {
 // ============ LISTEN — SIRF EK BAAR ============
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('🚀 Server running on port ' + PORT);
-});
+
+// Vercel khud isko handle karega, local testing ke liye listen zaroori hai
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log('🚀 Server running on port ' + PORT);
+  });
+}
+
+// Vercel ke liye export karna zaroori hai
+module.exports = app; 
