@@ -1,12 +1,11 @@
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
 const path = require('path');
 
 const app = express();
 app.use(cors());
 
-// ============ 1 SE 5 TAK CHUNKS LOAD KARO ============
+// ============ 1 SE 5 TAK CHUNKS LOAD KARO (REQUIRE METHOD) ============
 console.log('⏳ Loading data...');
 
 let data = [];
@@ -19,13 +18,13 @@ const CHUNKS = [
 ];
 
 CHUNKS.forEach(file => {
-  const fullPath = path.join(__dirname, file);
-  if (fs.existsSync(fullPath)) {
-    const chunk = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
+  try {
+    // Vercel ke liye require sabse best hai, yeh file ko miss nahi karta
+    const chunk = require('./' + file);
     chunk.forEach(item => data.push(item));
     console.log('✅ ' + file + ' → ' + chunk.length + ' records');
-  } else {
-    console.log('❌ ' + file + ' not found');
+  } catch (err) {
+    console.log('❌ ' + file + ' not found or error:', err.message);
   }
 });
 
@@ -224,7 +223,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ============ LISTEN — SIRF EK BAAR ============
+// ============ LISTEN & EXPORT ============
 
 const PORT = process.env.PORT || 3000;
 
